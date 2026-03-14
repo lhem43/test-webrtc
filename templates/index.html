@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>UAV Relay</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; }
+    h1 { margin-bottom: 8px; }
+    .card {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .muted { color: #666; }
+    a { text-decoration: none; }
+  </style>
+</head>
+<body>
+  <h1>Active Streams</h1>
+  <p class="muted">Refresh page to see latest active streams.</p>
+
+  {% if streams %}
+    {% for s in streams %}
+      <div class="card">
+        <div><strong>Stream ID:</strong> {{ s.stream_id }}</div>
+        <div><strong>Last update:</strong> {{ s.age_sec }}s ago</div>
+        <div><strong>Sender IP:</strong> {{ s.sender_ip }}</div>
+        <div style="margin-top:8px;">
+          <a href="/watch/{{ s.stream_id }}">Open viewer</a>
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p>No active stream yet.</p>
+  {% endif %}
+</body>
+</html>

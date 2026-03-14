@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Watch {{ stream_id }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; }
+    img {
+      max-width: 100%;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      display: block;
+    }
+    .meta {
+      margin-bottom: 16px;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <h1>Watching: {{ stream_id }}</h1>
+
+  <div class="meta">
+    {% if status %}
+      <div>Sender IP: {{ status.sender_ip }}</div>
+      <div>Last frame age: {{ status.age_sec }}s</div>
+    {% else %}
+      <div>No frames received yet. Keep this page open.</div>
+    {% endif %}
+  </div>
+
+  <img src="/mjpeg/{{ stream_id }}" alt="stream feed" />
+</body>
+</html>
