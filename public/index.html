@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simple WebRTC Stream</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 900px;
+      margin: 30px auto;
+      padding: 0 16px;
+    }
+    video {
+      width: 100%;
+      max-width: 700px;
+      background: black;
+      border-radius: 8px;
+    }
+    .row {
+      margin-bottom: 12px;
+    }
+    input, select, button {
+      padding: 8px 10px;
+      margin-right: 8px;
+    }
+    #log {
+      white-space: pre-wrap;
+      background: #f3f3f3;
+      padding: 12px;
+      border-radius: 8px;
+      min-height: 120px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Simple WebRTC Stream</h1>
+
+  <div class="row">
+    <label>Role:</label>
+    <select id="role">
+      <option value="sender">Sender (máy A)</option>
+      <option value="viewer">Viewer (máy B)</option>
+    </select>
+  </div>
+
+  <div class="row">
+    <label>Room ID:</label>
+    <input id="roomId" value="demo-room" />
+    <button id="startBtn">Start</button>
+  </div>
+
+  <div class="row">
+    <video id="video" autoplay playsinline muted></video>
+  </div>
+
+  <h3>Log</h3>
+  <div id="log"></div>
+
+  <script>
+    const video = document.getElementById("video");
+    const logBox = document.getElementById("log");
+    const startBtn = document.getElementById("startBtn");
+    const roomIdInput = document.getElementById("roomId");
+    const roleSelect = document.getElementById("role");
+
+    let ws;
+    let pc;
+    let localStream;
+
+    function log(msg) {
+      console.log(msg);
+      logBox.textContent += msg + "\n";
+    }
+
+    function getWsUrl() {
+      const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+      return `${protocol}//${location.host}`;
+    }
+
+    function createPeerConnection() {
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" }
+        ]
+      });
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          ws.send(JSON.stringify({
+            type: "candidate",
+            candidate: event.candidate
+          }));
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        log("Connection state: " + pc.connectionState);
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        log("ICE state: " + pc.iceConnectionState);
+      };
+
+      pc.ontrack = (event) => {
+        log("Received remote track");
+        video.srcObject = event.streams[0];
+      };
+
+      return pc;
+    }
+
+    async function startSender(roomId) {
+      ws = new WebSocket(getWsUrl());
+
+      ws.onopen = async () => {
+        log("WebSocket connected");
+        ws.send(JSON.stringify({
+          type: "join",
+          roomId,
+          role: "sender"
+        }));
+
+        pc = createPeerConnection();
+
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false
+        });
+
+        video.srcObject = localStream;
+
+        for (const track of localStream.getTracks()) {
+          pc.addTrack(track, localStream);
+        }
+
+        log("Waiting viewer...");
+      };
+
+      ws.onmessage = async (event) => {
+        const data = JSON.parse(event.data);
+        log("Signal received: " + data.type);
+
+        if (data.type === "offerRequest") {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+
+          ws.send(JSON.stringify({
+            type: "offer",
+            sdp: pc.localDescription
+          }));
+
+          log("Offer sent");
+        }
+
+        if (data.type === "answer") {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          log("Answer applied");
+        }
+
+        if (data.type === "candidate") {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            log("Remote ICE candidate added");
+          } catch (err) {
+            log("Error adding candidate: " + err.message);
+          }
+        }
+      };
+    }
+
+    async function startViewer(roomId) {
+      ws = new WebSocket(getWsUrl());
+
+      ws.onopen = async () => {
+        log("WebSocket connected");
+        ws.send(JSON.stringify({
+          type: "join",
+          roomId,
+          role: "viewer"
+        }));
+
+        pc = createPeerConnection();
+
+        // viewer requests sender to create offer
+        ws.send(JSON.stringify({
+          type: "offerRequest"
+        }));
+
+        log("Requested offer from sender");
+      };
+
+      ws.onmessage = async (event) => {
+        const data = JSON.parse(event.data);
+        log("Signal received: " + data.type);
+
+        if (data.type === "offer") {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          log("Offer applied");
+
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+
+          ws.send(JSON.stringify({
+            type: "answer",
+            sdp: pc.localDescription
+          }));
+
+          log("Answer sent");
+        }
+
+        if (data.type === "candidate") {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            log("Remote ICE candidate added");
+          } catch (err) {
+            log("Error adding candidate: " + err.message);
+          }
+        }
+      };
+    }
+
+    startBtn.onclick = async () => {
+      const roomId = roomIdInput.value.trim();
+      const role = roleSelect.value;
+
+      if (!roomId) {
+        alert("Please enter room ID");
+        return;
+      }
+
+      startBtn.disabled = true;
+
+      try {
+        if (role === "sender") {
+          await startSender(roomId);
+        } else {
+          await startViewer(roomId);
+        }
+      } catch (err) {
+        log("Start error: " + err.message);
+        startBtn.disabled = false;
+      }
+    };
+  </script>
+</body>
+</html>
